@@ -1,8 +1,7 @@
-
 import pandas as pd
 import numpy as np
 
-from  cbcdb import DBManager
+from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
 import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder
@@ -13,6 +12,8 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.callbacks import EarlyStopping
+import mlflow
+
 
 class CustomerRetention():
     def __init__(self):
@@ -86,50 +87,83 @@ class CustomerRetention():
                      left join bi.contacts c
                                on a.contact_id = c.ezyvet_id
                                    and t.location_id = c.location_id
-            where p.name not like '%Subscri%'
-              and p.product_group != 'Surgical Services'
+            where 
+                p.name not like '%Subscri%'
+              --and p.product_group != 'Surgical Services'
             group by 1, 2, 4, 5, 6, 7, 8, 9, 10;"""
         self.df = self.db.get_sql_dataframe(sql)
 
-    def process(self, df):
-        df = df.groupby(['animal_id', 'species', 'ani_age', 'datetime', 'name',
-                         'type', 'tracking_level', 'product_group', 'visit_more_than_once', 'rank_'], as_index=False)['revenue'].sum()
+    def feature_eng(self):
+        self.df = self.df[((self.df.weight != 0.0) | (self.df.breed != '0.0'))]
 
-        # get dummies for categorial features
-        df_product_group = pd.get_dummies(df.product_group)
-        df_species = pd.get_dummies(df.species)
-        # df_ = pd.concat([df1,df_product,df_species, df_product_group]).fillna(0).drop(columns = ['species','name','product_group'])
-        df_ = pd.concat([df, df_species, df_product_group], axis=1).drop(columns=['species', 'name', 'product_group'])
-        df_final = df_.groupby(['animal_id',
-                                'ani_age',
-                                'rank_',
-                                'visit_more_than_once'], as_index=False)['Canine (Dog)',
-                                                                 'Feline (Cat)', 'Dentistry & Oral Surgery', 'Diagnostics',
-                                                                 'Laboratory - Antech', 'Laboratory - In-house', 'Medications - Oral',
-                                                                 'Parasite Control', 'Professional Services', 'Promotions', 'Vaccinations',
-                                                                'Wellness Plan Fees'].sum()
-        df_ = df_final[df_final.rank_==1].copy()
+        self.df.reset_index(drop=True,inplace=True)
+        df_ = self.df[self.df.visit_number == 1][
+            ['uid', 'ani_age', 'weight', 'revenue', 'total_future_spend', 'product_group', 'breed']]
+        df_product_group = pd.get_dummies(self.df.product_group)
+        df_breed = pd.get_dummies(self.df.breed)
+        df_ = pd.concat([df_[['uid', 'ani_age', 'weight', 'revenue', 'total_future_spend']],
+                         df_breed,
+                         df_product_group], axis=1)
+
+        df_final = df_.groupby(['uid', 'ani_age', 'weight', 'revenue', 'total_future_spend',
+                                'breed'], as_index=False)['Canine (Dog)',
+        'Feline (Cat)', 'Dentistry & Oral Surgery', 'Diagnostics',
+        'Laboratory - Antech', 'Laboratory - In-house', 'Medications - Oral',
+        'Parasite Control', 'Professional Services', 'Promotions', 'Vaccinations',
+        'Wellness Plan Fees'].sum()
         return df_
 
-    def split_train_test(self):
-        X = self.df[['Canine (Dog)', #'ani_age',
-               'Feline (Cat)', 'Dentistry & Oral Surgery', 'Diagnostics',
-               'Laboratory - Antech', 'Laboratory - In-house', 'Medications - Oral',
-               'Parasite Control', 'Professional Services', 'Promotions',
-               'Vaccinations', 'Wellness Plan Fees']]
-        y = self.df['return_cust'].apply(lambda x: int(x))
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(X,
-                                                                                y,
-                                                                                test_size=.2,
-                                                                                random_state=42)
-    def glm_fit(self):
+
+    def split_train_test(self, df):
+        final_columns = list(df.columns)
+        for i in ['uid', 'total_future_spend', 'total_future_spend_bin']:
+            final_columns.remove(i)
+
+        X = df[final_columns]
+        y = df['total_future_spend'].apply(lambda x: int(x))
+        X_train, X_test, y_train, y_test = train_test_split(X,
+                                                            y,
+                                                            test_size=.2,
+                                                            random_state=42)
+        return X_train, X_test, y_train, y_test
+
+    def model_fit(self):
         res = sm.GLM(y_train, X_train, family=sm.families.Binomial()).fit()
 
 
-if __name__=="__main__":
-    load_dotenv(find_dotenv())
-    cust_ret = CustomerRetention()
-    cust_ret.read_in_latest()
-    cust_ret.process()
-    cust_ret.split_train_test()
+class MlflowCallback(tf.keras.callbacks.Callback):
 
+    # This function will be called after each epoch.
+    def on_epoch_end(self, epoch, logs=None):
+        if not logs:
+            return
+        # Log the metrics from Keras to MLflow
+        mlflow.log_metric("loss", logs["loss"], step=epoch)
+        mlflow.log_metric("acc", logs["acc"], step=epoch)
+
+        # This function will be called after training completes.
+        def on_train_end(self, logs=None):
+            mlflow.log_param('num_layers', len(self.model.layers))
+            mlflow.log_param('optimizer_name', type(self.model.optimizer).__name__)
+
+
+if __name__ == '__main__':
+    mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')
+    # mlflow.create_experiment(name='Employee Churn')
+    mlflow.set_experiment('Cust 1.5 year value')
+
+    # names = ['big_layer', 'smaller_layer']
+    # lstm_layer_1_sizes = [256, 128]
+    # lstm_layer_2_sizes = [128, 64]
+    #
+    # parameters_list = zip(names, lstm_layer_1_sizes, lstm_layer_2_sizes)
+    # for n, l1, l2 in parameters_list:
+    #     # start mlflow run
+    with mlflow.start_run(run_name=f'8_02_21'):
+        cr = CustomerRetention(read=True)
+        # ep.validate_model_pred()
+        cr.read_in_latest()
+        X_train, X_test, y_train, y_test, test_unique_ID = cr.feature_eng()
+        cr.create_model_and_fit(X_train, y_train, l1, l2)
+        y_pred = cr.predict(X_test, y_test)
+        cr.mlflow_metrics(X_test, y_test, y_pred)
