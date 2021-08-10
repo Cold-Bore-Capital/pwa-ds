@@ -15,7 +15,6 @@ from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 import mlflow
 
-mlflow.tensorflow.autolog(True)
 load_dotenv(find_dotenv())
 
 
@@ -196,145 +195,140 @@ class CustomerRetention():
         print(
             f"There are {self.df[self.df.total_future_spend < 0]['uid'].nunique()} patients who have somehow spent less than $0")
 
-
         self.df.reset_index(drop=True, inplace=True)
-        df_ = self.df[self.df.visit_number == 1][['uid', 'ani_age', 'weight', 'is_medical', 'product_group', 'type_id', 'wellness_plan', 'first_visit_spend','total_future_spend']]
-        df_main = df_.groupby(['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend'], as_index=False)['is_medical'].max()
+        df_ = self.df[self.df.visit_number == 1][
+            ['uid', 'ani_age', 'weight', 'is_medical', 'product_group', 'type_id', 'wellness_plan', 'first_visit_spend',
+             'total_future_spend']]
+        df_main = df_.groupby(['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend'], as_index=False)[
+            'is_medical'].max()
         df_product_group = pd.get_dummies(df_.product_group)
         df_type = pd.get_dummies(df_.type_id)
         df_ = pd.concat([df_[['uid']],
                          df_type,
                          df_product_group], axis=1)  # .fillna(0)
         df_ = df_.groupby(['uid']).sum()
-        df_final = df_main.merge(df_,on='uid')
+        df_final = df_main.merge(df_, on='uid')
 
         bins = [0, 100, 200, 300, 1000, 99999]
         self.labels = [0, 1, 2, 3, 4]
-        df_final['total_future_spend_bin'] = pd.cut(df_final['total_future_spend'], bins=bins, include_lowest=True,labels=self.labels)
+        df_final['total_future_spend_bin'] = pd.cut(df_final['total_future_spend'], bins=bins, include_lowest=True,
+                                                    labels=self.labels)
         print(f"Value Counts for labels: {df_final['total_future_spend_bin'].value_counts()}")
         return df_final
 
-    @staticmethod
-    def split_train_test(df, label: str = 'total_future_spend_bin'):
-        final_columns = list(df.columns)
-        for i in ['uid', 'total_future_spend', 'total_future_spend_bin']:
-            final_columns.remove(i)
 
-        X = df[final_columns]
-        y = df[label].apply(lambda x: int(x))
-        X_train, X_test, y_train, y_test = train_test_split(X,
-                                                            y,
-                                                            test_size=.2,
-                                                            random_state=42)
-        return X_train, X_test, y_train, y_test
+@staticmethod
+def split_train_test(df, label: str = 'total_future_spend_bin'):
+    final_columns = list(df.columns)
+    for i in ['uid', 'total_future_spend', 'total_future_spend_bin']:
+        final_columns.remove(i)
 
-    def model_fit(self, X_train, y_train, df):
-        self.model = Sequential()
-        self.model.add(Dense(512, input_dim=X_train.shape[1], activation='relu'))
-        self.model.add(Dense(256, input_dim=X_train.shape[1], activation='relu'))
-        self.model.add(Dense(128, activation='relu'))
-        self.model.add(Dense(len(self.labels), activation='softmax'))
+    X = df[final_columns]
+    y = df[label].apply(lambda x: int(x))
+    X_train, X_test, y_train, y_test = train_test_split(X,
+                                                        y,
+                                                        test_size=.2,
+                                                        random_state=42)
+    return X_train, X_test, y_train, y_test
 
-        self.model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-        es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=4)
 
-        if isinstance(df, pd.DataFrame):
-            class_weights = class_weight.compute_class_weight('balanced',
-                                                              np.unique(self.labels),
-                                                              list(df['total_future_spend_bin'].values))
-            class_weights = dict(enumerate(class_weights))
+def model_fit(self, X_train, y_train, df):
+    self.model = Sequential()
+    self.model.add(Dense(512, input_dim=X_train.shape[1], activation='relu'))
+    self.model.add(Dense(256, input_dim=X_train.shape[1], activation='relu'))
+    self.model.add(Dense(128, activation='relu'))
+    self.model.add(Dense(len(self.labels), activation='softmax'))
 
-            self.model.fit(X_train,
-                           y_train,
-                           epochs=100,
-                           batch_size=10,
-                           validation_split=.2,
-                           callbacks=[es],
-                           class_weight=class_weights)
-        else:
-            self.model.fit(X_train,
-                           y_train,
-                           epochs=100,
-                           batch_size=10,
-                           validation_split=.2,
-                           callbacks=[es])
+    self.model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=4)
 
-    def predict(self, X_test: np.array):
-        # Predict
-        y_pred = self.model.predict(X_test)
-        y_pred = np.argmax(y_pred, axis=-1)
+    if isinstance(df, pd.DataFrame):
+        class_weights = class_weight.compute_class_weight('balanced',
+                                                          np.unique(self.labels),
+                                                          list(df['total_future_spend_bin'].values))
+        class_weights = dict(enumerate(class_weights))
 
-        return y_pred
+        self.model.fit(X_train,
+                       y_train,
+                       epochs=100,
+                       batch_size=10,
+                       validation_split=.2,
+                       callbacks=[es],
+                       class_weight=class_weights)
+    else:
+        self.model.fit(X_train,
+                       y_train,
+                       epochs=100,
+                       batch_size=10,
+                       validation_split=.2,
+                       callbacks=[es])
 
-    def mlflow_metrics(self, y_test, y_pred, linear: bool = False):
-        # export_path = mlflow.active_run().info.artifact_uri
-        # builder = tf.saved_model.builder.SavedModelBuilder(export_path)
-        # # Save the model
-        # builder.save(as_text=True)
-        #
-        # # log the model
-        # mlflow.log_artifacts(export_path, "model")
-        # mlflow.tensorflow.log_model(tf_saved_model_dir=export_path,
-        #                             artifact_path="model")
 
-        # store metrics
-        if linear:
-            r2 = r2_score(y_test, y_pred)
-            exp_var = explained_variance_score(y_test, y_pred)
-            mse = mean_squared_error(y_test, y_pred)
-            rmse = np.sqrt(mse)
+def predict(self, X_test: np.array):
+    # Predict
+    y_pred = self.model.predict(X_test)
+    y_pred = np.argmax(y_pred, axis=-1)
 
-            mlflow.log_metric("R2", r2)
-            mlflow.log_metric("Explained Variance Score", exp_var)
-            mlflow.log_metric("Mean Squared Error", mse)
-            mlflow.log_metric("Root Mean Squared Error", rmse)
+    return y_pred
 
-        else:
-            f1_score_0 = f1_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
-            recall_score_0 = recall_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
-            precision_score_0 = precision_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
 
-            f1_score_ = f1_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
-            recall_score_ = recall_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
-            precision_score_ = precision_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
+def mlflow_metrics(self, y_test, y_pred, linear: bool = False):
+    # export_path = mlflow.active_run().info.artifact_uri
+    # builder = tf.saved_model.builder.SavedModelBuilder(export_path)
+    # # Save the model
+    # builder.save(as_text=True)
+    #
+    # # log the model
+    # mlflow.log_artifacts(export_path, "model")
+    # mlflow.tensorflow.log_model(tf_saved_model_dir=export_path,
+    #                             artifact_path="model")
 
-            y_test_ = [1 if x > 0 else 0 for x in y_test]
-            y_pred_ = [1 if x > 0 else 0 for x in y_pred]
-            f1_score_binary = f1_score(y_test_, y_pred_, average="weighted")
-            recall_score_binary = recall_score(y_test_, y_pred_, average="weighted")
-            precision_score_binary = precision_score(y_test_, y_pred_, average="weighted")
+    # store metrics
+    if linear:
+        r2 = r2_score(y_test, y_pred)
+        exp_var = explained_variance_score(y_test, y_pred)
+        mse = mean_squared_error(y_test, y_pred)
+        rmse = np.sqrt(mse)
 
-            mlflow.log_metric("F1", f1_score_0)
-            mlflow.log_metric("Recall", recall_score_0)
-            mlflow.log_metric("Precision", precision_score_0)
+        mlflow.log_metric("R2", r2)
+        mlflow.log_metric("Explained Variance Score", exp_var)
+        mlflow.log_metric("Mean Squared Error", mse)
+        mlflow.log_metric("Root Mean Squared Error", rmse)
 
-            mlflow.log_metric("F1 W/O 0", f1_score_)
-            mlflow.log_metric("Recall W/O 0", recall_score_)
-            mlflow.log_metric("Precision W/O 0", precision_score_)
+    else:
+        f1_score_0 = f1_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
+        recall_score_0 = recall_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
+        precision_score_0 = precision_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
 
-            mlflow.log_metric("F1 Binary", f1_score_binary)
-            mlflow.log_metric("Recall Binary", recall_score_binary)
-            mlflow.log_metric("Precision Binary", precision_score_binary)
+        f1_score_ = f1_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
+        recall_score_ = recall_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
+        precision_score_ = precision_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
+
+        y_test_ = [1 if x > 0 else 0 for x in y_test]
+        y_pred_ = [1 if x > 0 else 0 for x in y_pred]
+        f1_score_binary = f1_score(y_test_, y_pred_, average="weighted")
+        recall_score_binary = recall_score(y_test_, y_pred_, average="weighted")
+        precision_score_binary = precision_score(y_test_, y_pred_, average="weighted")
+
+        mlflow.log_metric("F1", f1_score_0)
+        mlflow.log_metric("Recall", recall_score_0)
+        mlflow.log_metric("Precision", precision_score_0)
+
+        mlflow.log_metric("F1 W/O 0", f1_score_)
+        mlflow.log_metric("Recall W/O 0", recall_score_)
+        mlflow.log_metric("Precision W/O 0", precision_score_)
+
+        mlflow.log_metric("F1 Binary", f1_score_binary)
+        mlflow.log_metric("Recall Binary", recall_score_binary)
+        mlflow.log_metric("Precision Binary", precision_score_binary)
 
 
 if __name__ == '__main__':
-    mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')
-    # mlflow.create_experiment(name='Employee Churn')
-    mlflow.set_experiment('Cust 1.5 year value')
-
-    # names = ['big_layer', 'smaller_layer']
-    # lstm_layer_1_sizes = [256, 128]
-    # lstm_layer_2_sizes = [128, 64]
-    #
-    # parameters_list = zip(names, lstm_layer_1_sizes, lstm_layer_2_sizes)
-    # for n, l1, l2 in parameters_list:
-    #     # start mlflow run
-    with mlflow.start_run(run_name=f'W/imputation'):
-        cr = CustomerRetention()
-        # ep.validate_model_pred()
-        cr.read_in_latest()
-        df = cr.feature_eng(df)
-        X_train, X_test, y_train, y_test = cr.split_train_test(df)
-        cr.model_fit(X_train, y_train, df)
-        y_pred = cr.predict(X_test)
-        cr.mlflow_metrics(y_test, y_pred)
+    cr = CustomerRetention()
+    # ep.validate_model_pred()
+    df = cr.read_in_latest()
+    df = cr.feature_eng(df)
+    X_train, X_test, y_train, y_test = cr.split_train_test(df)
+    cr.model_fit(X_train, y_train, df)
+    y_pred = cr.predict(X_test)
+    cr.mlflow_metrics(y_test, y_pred)
