@@ -6,13 +6,14 @@ from dotenv import load_dotenv, find_dotenv
 import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, precision_score
+from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, \
+    precision_score
 from sklearn.utils import class_weight
 import statsmodels.api as sm
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 import mlflow
 
@@ -73,9 +74,9 @@ class CustomerRetention():
                                         and wp.ezyvet_id = wm.wellness_plan
                              left join bi.animals a
                                  on a.location_id = wm.location_id
-                                        and a.ezyvet_id = wm.animal_id
-                    where wp.active = 1
-                      and wm.status = 'Active');
+                                        and a.ezyvet_id = wm.animal_id);
+                    -- where wp.active = 1
+                    --  and wm.status = 'Active');
 
             select f1.uid
                      , f1.breed
@@ -159,25 +160,37 @@ class CustomerRetention():
         self.df.to_csv('data/data.csv')
 
     def feature_eng(self):
-        self.df = self.df[((self.df.weight != 0.0) & (self.df.breed != '0.0'))]
-        print(f"There are {self.df[self.df.total_future_spend > 5000]['uid'].nunique()} patients who have spent more than 5k")
-        print(f"There are {self.df[self.df.total_future_spend < 0]['uid'].nunique()} patients who have somehow spent less than $0")
+        print(f"Number of unique id\'s priot to filtering 0 from weight and breed: {self.df.uid.nunique()}")
+        (self.df.weight == 0).sum()
+        (self.df.breed == '0.0').sum()
+        self.df = self.df[((self.df.weight != 0) & (self.df.breed != '0.0'))]
+        print(f"Number of unique id\'s : {self.df.uid.nunique()}")
+        print(
+            f"There are {self.df[self.df.total_future_spend > 5000]['uid'].nunique()} patients who have spent more than 5k")
+        print(
+            f"There are {self.df[self.df.total_future_spend < 0]['uid'].nunique()} patients who have somehow spent less than $0")
         self.df['total_future_spend'] = self.df.total_future_spend.apply(lambda x: 5000 if x > 5000 else x)
         self.df['total_future_spend'] = self.df['total_future_spend'].apply(lambda x: 0 if x < 0 else x)
 
+
+
+
+
+        #self.df = self.df[((self.df.ani_age.notnull()) & (self.df.weight.notnull()))]
+        self.df['ani_age'] = self.df['ani_age'].fillna((self.df['ani_age'].mean()))
+        self.df['weight'] = self.df['weight'].fillna((self.df['weight'].mean()))
+        self.df['weight'] = self.df['weight'].apply(lambda x: self.df['weight'].mean() if x == 0 else x)
+
         self.df.reset_index(drop=True, inplace=True)
-        df_ = self.df[self.df.visit_number == 1][['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend', 'product_group', 'breed']]
-        df_product_group = pd.get_dummies(self.df.product_group)
-        df_breed = pd.get_dummies(self.df.breed)
-        df_ = pd.concat([df_[['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend']],
-                         df_breed,
-                         df_product_group], axis=1)
-
-        columns_to_sum = list(df_.columns)
-        for i in ['uid', 'weight', 'ani_age', 'first_visit_spend', 'total_future_spend']:
-            columns_to_sum.remove(i)
-
-        df_final = df_.groupby(['uid', 'weight', 'ani_age', 'first_visit_spend', 'total_future_spend'], as_index=False)[columns_to_sum].sum()
+        df_ = self.df[self.df.visit_number == 1][['uid', 'ani_age', 'weight', 'is_medical', 'product_group', 'type_id', 'wellness_plan', 'first_visit_spend','total_future_spend']]
+        df_main = df_.groupby(['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend'], as_index=False)['is_medical'].max()
+        df_product_group = pd.get_dummies(df_.product_group)
+        df_type = pd.get_dummies(df_.type_id)
+        df_ = pd.concat([df_[['uid']],
+                         df_type,
+                         df_product_group], axis=1)  # .fillna(0)
+        df_ = df_.groupby(['uid']).sum()
+        df_final = df_main.merge(df_,on='uid')
 
         bins = [0, 100, 200, 300, 1000, 99999]
         self.labels = [0, 1, 2, 3, 4]
@@ -199,16 +212,14 @@ class CustomerRetention():
         return X_train, X_test, y_train, y_test
 
     def model_fit(self, X_train, y_train, df):
-
         self.model = Sequential()
+        self.model.add(Dense(512, input_dim=X_train.shape[1], activation='relu'))
         self.model.add(Dense(256, input_dim=X_train.shape[1], activation='relu'))
         self.model.add(Dense(128, activation='relu'))
-        # self.model.add(Dense(1, activation='linear'))
         self.model.add(Dense(len(self.labels), activation='softmax'))
 
         self.model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-        es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=3)
-
+        es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=4)
 
         if isinstance(df, pd.DataFrame):
             class_weights = class_weight.compute_class_weight('balanced',
@@ -230,7 +241,6 @@ class CustomerRetention():
                            batch_size=10,
                            validation_split=.2,
                            callbacks=[es])
-
 
     def predict(self, X_test: np.array):
         # Predict
@@ -272,7 +282,7 @@ class CustomerRetention():
             precision_score_ = precision_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
 
             y_test_ = [1 if x > 0 else 0 for x in y_test]
-            y_pred_  = [1 if x > 0 else 0 for x in y_pred]
+            y_pred_ = [1 if x > 0 else 0 for x in y_pred]
             f1_score_binary = f1_score(y_test_, y_pred_, average="weighted")
             recall_score_binary = recall_score(y_test_, y_pred_, average="weighted")
             precision_score_binary = precision_score(y_test_, y_pred_, average="weighted")
@@ -290,7 +300,6 @@ class CustomerRetention():
             mlflow.log_metric("Precision Binary", precision_score_binary)
 
 
-
 if __name__ == '__main__':
     mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')
     # mlflow.create_experiment(name='Employee Churn')
@@ -303,7 +312,7 @@ if __name__ == '__main__':
     # parameters_list = zip(names, lstm_layer_1_sizes, lstm_layer_2_sizes)
     # for n, l1, l2 in parameters_list:
     #     # start mlflow run
-    with mlflow.start_run(run_name=f'8_02_21'):
+    with mlflow.start_run(run_name=f'W/imputation'):
         cr = CustomerRetention()
         # ep.validate_model_pred()
         cr.read_in_latest()
