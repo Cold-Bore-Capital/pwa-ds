@@ -105,8 +105,7 @@ class CustomerRetention():
                          df_breed,
                          df_product_group], axis=1)
 
-        df_final = df_.groupby(['uid', 'ani_age', 'weight', 'revenue', 'total_future_spend',
-                                'breed'], as_index=False)['Canine (Dog)',
+        df_final = df_.groupby(['uid', 'ani_age', 'weight', 'revenue', 'total_future_spend','breed'], as_index=False)['Canine (Dog)',
         'Feline (Cat)', 'Dentistry & Oral Surgery', 'Diagnostics',
         'Laboratory - Antech', 'Laboratory - In-house', 'Medications - Oral',
         'Parasite Control', 'Professional Services', 'Promotions', 'Vaccinations',

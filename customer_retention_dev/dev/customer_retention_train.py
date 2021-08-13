@@ -172,40 +172,102 @@ class CustomerRetention():
         # find dog breed
         if breed_api:
             df['breed'] = df['breed'].apply(lambda x: self.dog_breed(x))
+        else:
+            working = ['Alaskan Malamute', 'Siberian Huskie', 'husky', 'Great Dane', 'Doberman', 'Rottweiler', 'Akita',
+                       'Anatolian Shepherd', 'Huskie', 'Saint Bernard', 'Mastiff', 'Bernard', 'Portuguese Water Dog',
+                       'German Pinscher', 'Great Pyrenee', 'Giant Schnauzer', 'Greater Swiss Mountain Dog',
+                       'Newfoundland', 'Samoyed', 'Bullmastiff', 'Bernese Mountain Dog', 'mountain curr', 'point',
+                       'Large']
+            herding = ['Australian Cattle Dog', 'Australian Shepherd', 'Collie', 'Shetland Sheepdog',
+                       'Pembroke Welsh Corgi', 'Cardigan Welsh Corgi', 'Old English Sheepdog', 'Belgian Tervuren',
+                       'Canaan Dog', 'Briard', 'Bouvier des Flandre', 'Belgian Malinoi', 'German Shepherd', 'corgi',
+                       'boxer', 'sheep', 'shep', 'aussie', 'shetland', 'auusie']
+            hound = ['Basset Hound', 'Saluki', 'Beagle', 'Harrier', 'American Foxhound', 'English Foxhound',
+                     'Bloodhound', 'Irish Wolfhound', 'Dachshund', 'Otterhound', 'Norwegian Elkhound', 'Greyhound',
+                     'Italian Greyhound', 'Whippet', 'Afghan Hound', 'Borzois Hound', 'Coonhound',
+                     'Rhodesian Ridgeback', 'Petit Basset Griffon Vendéen', 'Basenji', 'hound']
+            sporting = ['Cocker', 'Irish Setter', 'English Springer Spaniel', 'Clumber Spaniel',
+                        'German Shorthaired Pointer', 'German Wirehaired Pointer', 'American Water Spaniel',
+                        'Weimaraner', 'Retriever', 'Chesapeake Bay Retriever', 'English Setter', 'staffordshire']
+            non_sporting = ['Dalmatian', 'Chow Chow', 'Finnish Spitz', 'Shar Pei', 'American Bulldog', 'Poodle',
+                            'Boston Terrier', 'Lhasa Apso', 'Shiba Inu', 'French Bulldog', 'Schipperke',
+                            'American Eskimo Dog']
+            toy = ['Chihuahua', 'Pomeranian', 'Maltese', 'Cavalier King Charles Spaniel', 'Silky Terrier',
+                   'Chinese Crested Dog', 'Miniature Schnauzer', 'Bichon Frise', 'Yorkshire Terrier', 'Pekingese',
+                   'Shih Tzu', 'Japanese Chin', 'Havanese', 'Miniature Pinscher', 'Brussels Griffon', 'Papillon',
+                   'Affenpinscher', 'Pug', 'doodle', 'yorkie', 'shih', 'shitzu', 'poo', 'schnoodle', 'mini aussie',
+                   'crested', 'pom', 'shorkie', 'mini', 'teddy', 'small', 'chorkie', 'chi', 'tibetan', 'dachs', 'toy',
+                   'bichon', 'yorki']
+            terrier = ['Airedale Terrier', 'American Staffordshire Terrier', 'Jack Russell', 'Bull Terrier', 'pit bull',
+                       'pitbull' 'Fox Terrier', 'Wheaten Terrier', 'Cairn Terrier', 'West Highland White Terrier',
+                       'Australian Terrier', 'Border Terrier', 'Staffordshire Bull Terrier', 'Bedlington Terrier',
+                       'Kerry Blue Terrier', 'Rat Terrier', 'Scottish Terrier', 'Bull', 'blue terr', "terrier", 'pit']
+            companion = ['mutt', 'goldon', 'Lab']
+            mix = ['mix']
+            cat = ['cat', 'siamese']
+
+            working = [x.lower() for x in working]
+            herding = [x.lower() for x in herding]
+            hound = [x.lower() for x in hound]
+            sporting = [x.lower() for x in sporting]
+            non_sporting = [x.lower() for x in non_sporting]
+            toy = [x.lower() for x in toy]
+            companion = [x.lower() for x in companion]
+            terrier = [x.lower() for x in terrier]
+
+            df['breed'] = df['breed'].apply(lambda x: 'working' if any(ext in x.lower() for ext in working) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'herding' if any(ext in x.lower() for ext in herding) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'hound' if any(ext in x.lower() for ext in hound) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'sporting' if any(ext in x.lower() for ext in sporting) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'non_sporting' if any(ext in x.lower() for ext in non_sporting) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'toy' if any(ext in x.lower() for ext in toy) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'terrier' if any(ext in x.lower() for ext in terrier) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'companion' if any(ext in x.lower() for ext in companion) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'cat' if any(ext in x.lower() for ext in cat) else x)
+            df['breed'] = df['breed'].apply(lambda x: 'mix' if any(ext in x.lower() for ext in mix) else x)
+
+            # create other class
+            groups = ['working', 'herding', 'hound', 'sporting', 'non_sporting', 'toy', 'terrier', 'companion', 'cat', 'mix']
+            df['breed'] = df['breed'].apply(lambda x: x if any(ext in x.lower() for ext in groups) else 'oth')
 
         print(f"There are {(df.weight == 0).sum()} animals with weight = 0)")
         print(f"There are {(df.ani_age == 0).sum()} animals with age = 0)")
         print(f"There are {(df.breed == '0.0').sum()} animals with breed = 0)")
 
         df['weight'] = df['weight'].replace(0, np.nan)
-        df.groupby(['ani_age', 'breed'])['weight'].transform(lambda x: x.fillna(x.mean())).value_counts()
+        df['weight'] = df.groupby(['ani_age', 'breed'])['weight'].transform(lambda x: x.fillna(x.mean())).value_counts()
 
-        self.df = self.df[((self.df.weight != 0) & (self.df.breed != '0.0'))]
-        self.df['total_future_spend'] = self.df.total_future_spend.apply(lambda x: 5000 if x > 5000 else x)
-        self.df['total_future_spend'] = self.df['total_future_spend'].apply(lambda x: 0 if x < 0 else x)
+        mask = ((df.weight != 0) & (df.breed != '0.0'))
+        df.drop(df[mask].index, inplace=True)
+
+        df['total_future_spend'] = df.total_future_spend.apply(lambda x: 5000 if x > 5000 else x)
+        df['total_future_spend'] = df['total_future_spend'].apply(lambda x: 0 if x < 0 else x)
 
         # self.df = self.df[((self.df.ani_age.notnull()) & (self.df.weight.notnull()))]
-        self.df['ani_age'] = self.df['ani_age'].fillna((self.df['ani_age'].mean()))
-        self.df['weight'] = self.df['weight'].fillna((self.df['weight'].mean()))
-        self.df['weight'] = self.df['weight'].apply(lambda x: self.df['weight'].mean() if x == 0 else x)
+        #self.df['ani_age'] = self.df['ani_age'].fillna((self.df['ani_age'].mean()))
+        #self.df['weight'] = self.df['weight'].fillna((self.df['weight'].mean()))
+        #self.df['weight'] = self.df['weight'].apply(lambda x: self.df['weight'].mean() if x == 0 else x)
 
-        print(f"Number of unique id\'s : {self.df.uid.nunique()}")
+        print(f"Number of unique id\'s : {df.uid.nunique()}")
         print(
-            f"There are {self.df[self.df.total_future_spend > 5000]['uid'].nunique()} patients who have spent more than 5k")
+            f"There are {df[df.total_future_spend > 5000]['uid'].nunique()} patients who have spent more than 5k")
         print(
-            f"There are {self.df[self.df.total_future_spend < 0]['uid'].nunique()} patients who have somehow spent less than $0")
+            f"There are {df[df.total_future_spend < 0]['uid'].nunique()} patients who have somehow spent less than $0")
 
-        self.df.reset_index(drop=True, inplace=True)
-        df_ = self.df[self.df.visit_number == 1][
-            ['uid', 'ani_age', 'weight', 'is_medical', 'product_group', 'type_id', 'wellness_plan', 'first_visit_spend',
-             'total_future_spend']]
+        df.reset_index(drop=True, inplace=True)
+        df_ = df[df.visit_number == 1][
+            ['uid', 'ani_age', 'weight', 'is_medical', 'product_group', 'type_id', 'breed',
+             'wellness_plan', 'first_visit_spend', 'total_future_spend']]
         df_main = df_.groupby(['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend'], as_index=False)[
             'is_medical'].max()
+
         df_product_group = pd.get_dummies(df_.product_group)
         df_type = pd.get_dummies(df_.type_id)
+        df_breed = pd.get_dummies(df_.breed)
         df_ = pd.concat([df_[['uid']],
                          df_type,
-                         df_product_group], axis=1)  # .fillna(0)
+                         df_product_group,
+                         df_breed], axis=1)  # .fillna(0)
         df_ = df_.groupby(['uid']).sum()
         df_final = df_main.merge(df_, on='uid')
 
