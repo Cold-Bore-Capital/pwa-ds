@@ -17,20 +17,26 @@ class BreedIdentifier():
 
     def start(self, new_breeds: List):
         db = DBManager()
-        df_breed = db.get_sql_dataframe("select * from bi.breeds")
+
+        # Remove none from list
+        new_breeds = [i for i in new_breeds if i]
 
         # Identify tier using azure
         df = self.identify_tier(new_breeds)
 
+        #breed groupings
         self.identify_breed_grouping(df)
 
         self.write_to_db(df, db)
 
     def identify_tier(self, new_breeds: List):
         tier = []
+        tier_score = []
         for i in new_breeds:
-            tier.append(self.breed_api(i, self.azure_key))
-        df_breeds = pd.DataFrame({'breed': new_breeds, 'tier': tier})
+            t, t_s = self.breed_api(i, self.azure_key)
+            tier.append(t)
+            tier_score.append(t_s)
+        df_breeds = pd.DataFrame({'breed': new_breeds, 'tier': tier, 'tier_score': tier_score})
 
         return df_breeds
 
@@ -79,22 +85,34 @@ class BreedIdentifier():
         terrier = [x.lower() for x in terrier]
 
         df['breed_group'] = 'oth'
-        df['breed_group'] = df.apply(lambda x: 'working' if any(ext in x['breed'].lower() for ext in working) else x['breed_group'], axis = 1)
-        df['breed_group'] = df.apply(lambda x: 'herding' if any(ext in x['breed'].lower() for ext in herding) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'hound' if any(ext in x['breed'].lower() for ext in hound) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'sporting' if any(ext in x['breed'].lower() for ext in sporting) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'non_sporting' if any(ext in x['breed'].lower() for ext in non_sporting) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'toy' if any(ext in x['breed'].lower() for ext in toy) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'companion' if any(ext in x['breed'].lower() for ext in companion) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'terrier' if any(ext in x['breed'].lower() for ext in terrier) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'mix' if any(ext in x['breed'].lower() for ext in mix) else x['breed_group'], axis=1)
-        df['breed_group'] = df.apply(lambda x: 'cat' if any(ext in x['breed'].lower() for ext in cat) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(lambda x: 'working' if any(ext in x['breed'].lower() for ext in working) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'herding' if any(ext in x['breed'].lower() for ext in herding) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'hound' if any(ext in x['breed'].lower() for ext in hound) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'sporting' if any(ext in x['breed'].lower() for ext in sporting) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'non_sporting' if any(ext in x['breed'].lower() for ext in non_sporting) else x['breed_group'],
+            axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'toy' if any(ext in x['breed'].lower() for ext in toy) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'companion' if any(ext in x['breed'].lower() for ext in companion) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'terrier' if any(ext in x['breed'].lower() for ext in terrier) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'mix' if any(ext in x['breed'].lower() for ext in mix) else x['breed_group'], axis=1)
+        df['breed_group'] = df.apply(
+            lambda x: 'cat' if any(ext in x['breed'].lower() for ext in cat) else x['breed_group'], axis=1)
 
     @staticmethod
     def breed_api(animal, key):
         response = requests.get(
-            f"https://pwa-breed-identification.cognitiveservices.azure.com/luis/prediction/v3.0/apps/e57c5e2f-a645-42cb-9777-f7f2ca6ad945/slots/production/predict?subscription-key={key}&verbose=false&show-all-intents=false&log=true&query={animal}")
-        return response.json()['prediction']['topIntent']
+            f"https://pwa-breed-identification.cognitiveservices.azure.com/luis/prediction/v3.0/apps/bd914c7a-a58f-499c-a930-5d68ebbfaa95/slots/production/predict?subscription-key={key}&verbose=true&show-all-intents=true&log=true&query={animal}")
+        top_intent = response.json()['prediction']['topIntent']
+        score = response.json()['prediction']['intents'][top_intent]['score']
+        return top_intent, score
 
     @staticmethod
     def write_to_db(df: pd.DataFrame, db: DBManager, schema: str = 'bi') -> None:
