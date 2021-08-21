@@ -2,9 +2,14 @@ import pandas as pd
 import numpy as np
 
 from cbcdb import DBManager
+import datetime
 import mlflow
 import os
 import xgboost as xgb
+import sys
+
+sys.path.append('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/customer_retention')
+from utilities.breed_identifier import BreedIdentifier
 
 
 class CustomerRetentionPred():
@@ -48,7 +53,7 @@ class CustomerRetentionPred():
                      select uid
                           , datetime_
                           , rank_group
-                          , rank() over (partition by uid order by rank_group asc) as visit_number
+                          , dense_rank() over (partition by uid order by rank_group asc) as visit_number
                      from (
                               SELECT uid
                                    , datetime                                                                  as datetime_
@@ -187,7 +192,6 @@ class CustomerRetentionPred():
         df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_group', 'tier', 'is_medical',
                   'wellness_plan', 'first_visit_spend', 'total_future_spend']]
 
-
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         # # Create categorical df. Number of rows should equate to the number of unique uid
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -266,10 +270,14 @@ class CustomerRetentionPred():
         y_pred = np.around(y_pred, decimals=3)
         y_final_prob = [max(i) for i in y_pred]
         y = np.argmax(y_pred, axis=-1)
-        df = pd.DataFrame(y_pred, columns=['predicted_val_prob_0','predicted_val_prob_1','predicted_val_prob_2','predicted_val_prob_3','predicted_val_prob_4'])
+        df = pd.DataFrame(y_pred, columns=['predicted_val_prob_0', 'predicted_val_prob_1', 'predicted_val_prob_2',
+                                           'predicted_val_prob_3', 'predicted_val_prob_4', 'predicted_val_prob_5'])
         df['uid'] = X['uid']
         df['final_category'] = y
         df['final_category_prob'] = y_final_prob
+        df['total_num_visit'] = 1
+        df['total_future_spend'] = 0
+        df['date_of_upload'] = datetime.date.today().strftime('%Y-%m-%d')
 
         return df
 
@@ -286,6 +294,7 @@ class CustomerRetentionPred():
         if len(df) > 0:
             sql, params = db.build_sql_from_dataframe(df, 'future_cust_value', schema)
             db.insert_many(sql, params)
+
 
 if __name__ == '__main__':
     mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')

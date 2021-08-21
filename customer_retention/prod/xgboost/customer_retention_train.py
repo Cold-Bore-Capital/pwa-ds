@@ -64,7 +64,7 @@ class CustomerRetention():
                      select uid
                           , datetime_
                           , rank_group
-                          , rank() over (partition by uid order by rank_group asc) as visit_number
+                          , dense_rank() over (partition by uid order by rank_group asc) as visit_number
                      from (
                               SELECT uid
                                    , datetime                                                                  as datetime_
@@ -282,8 +282,8 @@ class CustomerRetention():
             df['total_future_spend_bin'] = pd.cut(df['total_future_spend'], bins=bins, include_lowest=True,
                                                         labels=labels)
         else:
-            bins = [0, 1, 100, 500, 1000, 99999]
-            labels = [0, 1, 2, 3, 4]
+            bins = [0, 1, 200, 350, 500, 1000, 99999]
+            labels = [0, 1, 2, 3, 4, 5]
             df['total_future_spend_bin'] = pd.cut(df['total_future_spend'], bins=bins, include_lowest=True,
                                                         labels=labels)
 
@@ -308,9 +308,9 @@ class CustomerRetention():
         evallist = [(dtest, 'eval'), (dtrain, 'train')]
         param = {'max_depth': 5,
                  'objective': objective,
-                 'num_class': 5,
+                 'num_class': 6,
                  'nthread': 4,
-                 'eval_metric': ['auc']}
+                 'eval_metric': ['merror','mlogloss','auc']}
 
         num_round = 20
         bst = xgb.train(param, dtrain, num_round, evallist)
@@ -330,13 +330,13 @@ class CustomerRetention():
                                  conda_env=mlflow.xgboost.get_default_conda_env())
 
         # store metrics
-        f1_score_0 = f1_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
-        recall_score_0 = recall_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
-        precision_score_0 = precision_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
+        f1_score_0 = f1_score(y_test, y_pred, labels=[0, 1, 2, 3, 4, 5], average="weighted")
+        recall_score_0 = recall_score(y_test, y_pred, labels=[0, 1, 2, 3, 4, 5], average="weighted")
+        precision_score_0 = precision_score(y_test, y_pred, labels=[0, 1, 2, 3, 4, 5], average="weighted")
 
-        f1_score_ = f1_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
-        recall_score_ = recall_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
-        precision_score_ = precision_score(y_test, y_pred, labels=[1, 2, 3, 4], average="weighted")
+        f1_score_ = f1_score(y_test, y_pred, labels=[1, 2, 3, 4, 5], average="weighted")
+        recall_score_ = recall_score(y_test, y_pred, labels=[1, 2, 3, 4, 5], average="weighted")
+        precision_score_ = precision_score(y_test, y_pred, labels=[1, 2, 3, 4, 5], average="weighted")
 
         y_test_ = [1 if x > 0 else 0 for x in y_test]
         y_pred_ = [1 if x > 0 else 0 for x in y_pred]

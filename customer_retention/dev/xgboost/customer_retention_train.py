@@ -62,7 +62,7 @@ class CustomerRetention():
                      select uid
                           , datetime_
                           , rank_group
-                          , rank() over (partition by uid order by rank_group asc) as visit_number
+                          , dense_rank() over (partition by uid order by rank_group asc) as visit_number
                      from (
                               SELECT uid
                                    , datetime                                                                  as datetime_
@@ -141,7 +141,6 @@ class CustomerRetention():
                                , max(
                                   date_diff('years', timestamp 'epoch' + a.date_of_birth * interval '1 second',
                                             current_date))                                                                   as ani_age
-                               --, min(trunc(t.datetime_date)) over (partition by t.location_id || '_' || t.animal_id) as      date_of_first_visit
                                , case when trunc(t.datetime_date) - min(trunc(t.datetime_date)) over (partition by t.location_id || '_' || t.animal_id) > 548 then 0
                                    else 1 end as less_than_1_5_yeras
                                 , case when current_date - min(trunc(t.datetime_date)) over (partition by t.location_id || '_' || t.animal_id) <  270 then 0
@@ -155,14 +154,6 @@ class CustomerRetention():
                                         when p.product_group like  ('Referrals%') then 'Referrals'
                                         when p.product_group in ('to print','To Print','Administration') then 'admin'
                                         else p.product_group end as product_group
-                               , case
-                                     when apt.type_id like 'Grooming%' then 'groom'
-                                     when apt.type_id like '%Neuter%' then 'neurtering'
-                                     when apt.type_id like '%ental%' then 'dental'
-                                     else apt.type_id end                                                                    as type_id
-                               --, p.name
-                               --, p.type
-                               --, p.tracking_level
                                , t.product_name
                                , sum(t.revenue)                                                                                   as revenue
                                , dense_rank()
@@ -172,20 +163,13 @@ class CustomerRetention():
                                    left join bi.products p
                                               on t.product_id = p.ezyvet_id
                                                   and t.location_id = p.location_id
-                                   left join bi.animals a
+                                   inner join bi.animals a
                                               on a.id = t.animal_id
                                    left join bi.contacts c
                                              on a.contact_id = c.ezyvet_id
                                                  and t.location_id = c.location_id
-                                   left join bi.appointments apt
-                                             on a.contact_id = apt.ezyvet_id
-                                                 and t.location_id = apt.location_id
-                                --where t.product_name like 'First Day Daycare Free%'
-                                -- type_id not in ('Cancellation')
-                                -- p.name not like '%Subscri%'
-                                --  and p.product_group != 'Surgical Services'
-                                -- and a.breed != '0.0'
-                          group by 1, 2, 6, 7, 8, 9, 10, 11
+                            --where p.is_medical = 1
+                          group by 1, 2, 6, 7, 8, 9, 10
                      ) f
                   inner join consecutive_days cd
                             on f.uid = cd.uid
@@ -195,7 +179,7 @@ class CustomerRetention():
                                 and f.date = w.datetime_
                     where less_than_1_5_yeras = 1
                             and recent_patient = 1) f1
-        --where f1.visit_number = 1
+        where f1.visit_number = 1
         order by 1, 4;
         """
         if export:
@@ -232,7 +216,9 @@ class CustomerRetention():
         df.reset_index(drop=True, inplace=True)
         df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_group', 'tier', 'is_medical',
                   'wellness_plan', 'first_visit_spend', 'total_future_spend']]
-        # x = df_[df_.type_id == 'Cancellation']
+        # x = df[df.max_num_visit > 1]
+        # x.groupby(['is_medical']).agg({'max_num_visit':['count','mean']})
+
 
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         # # Create categorical df. Number of rows should equate to the number of unique uid
@@ -313,9 +299,9 @@ class CustomerRetention():
         evallist = [(dtest, 'eval'), (dtrain, 'train')]
         param = {'max_depth': 5,
                  'objective': objective,
-                 'num_class': 5,
+                 'num_class': 6,
                  'nthread': 4,
-                 'eval_metric': ['auc']}
+                 'eval_metric': ['merror','mlogloss','auc']}
 
         num_round = 20
         bst = xgb.train(param, dtrain, num_round, evallist)
@@ -329,10 +315,10 @@ class CustomerRetention():
         mlflow.log_artifact("artifacts/feature_importance.png")
         plt.close()
 
-        mlflow.xgboost.log_model(xgb_model=bst,
-                                 artifact_path='model',
-                                 conda_env=mlflow.xgboost.get_default_conda_env(),
-                                 registered_model_name="XGBoost")
+        # mlflow.xgboost.log_model(xgb_model=bst,
+        #                          artifact_path='model',
+        #                          conda_env=mlflow.xgboost.get_default_conda_env(),
+        #                          registered_model_name="XGBoost")
 
         # store metrics
         f1_score_0 = f1_score(y_test, y_pred, labels=[0, 1, 2, 3, 4], average="weighted")
@@ -364,11 +350,11 @@ class CustomerRetention():
 
 if __name__ == '__main__':
     #mlflow.set_tracking_uri("postgresql://mlflow_USER:mlflow@0.0.0.0:5438/ML_FLOW_DB")
-    #mlflow.set_tracking_uri("/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns")
-    mlflow.set_tracking_uri("http://localhost:5000")
-    mlflow.set_experiment('Cust 1.5 year value')
+    mlflow.set_tracking_uri("/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns")
+    #mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment('Medical Vs Non-Medical')
     mlflow.xgboost.autolog()
-    with mlflow.start_run(run_name=f'XGBoost'):
+    with mlflow.start_run(run_name=f'Medical'):
         cr = CustomerRetention()
         cr.start()
 

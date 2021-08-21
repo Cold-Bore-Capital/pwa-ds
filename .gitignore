@@ -128,3 +128,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 /.vscode/
+/customer_retention/docker/postgres-data/
