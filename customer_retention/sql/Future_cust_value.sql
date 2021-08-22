@@ -14,4 +14,12 @@ ID      		                bigint     		identity
 , total_num_visit               smallint
 , total_future_spend            decimal(6,0)
 , date_of_upload                date
-)
+);
+
+GRANT select, update, insert, delete
+    ON ALL TABLES IN SCHEMA bi
+    TO pipeline;
+
+GRANT select
+    ON ALL TABLES IN SCHEMA bi
+    TO looker;

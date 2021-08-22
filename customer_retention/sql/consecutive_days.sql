@@ -335,3 +335,98 @@ create temporary table wellness as (
         where f1.visit_number = 1
             and fcv.uid is null
         order by 1, 4;
+
+
+-- For predict
+
+    select f1.uid
+     , f1.breed
+     , f1.ani_age
+     , f1.date
+     , f1.weight
+     , f1.is_medical
+     , f1.product_group
+     , f1.product_name
+     ,  sum(case when f1.product_name like 'First Day Daycare Fre%' then 1 else 0 end)
+             over (partition by f1.uid)  as product_count
+     --, f1.type_id
+     , f1.wellness_plan
+     --, f1.months_a_member
+     , f1.visit_number
+     , f1.visit_more_than_once
+     , f1.max_num_visit
+     , f1.first_visit_spend
+     , f1.total_future_spend
+from (
+             select f.uid
+              , f.breed
+              , f.ani_age
+              , f.date
+              , f.weight
+              , f.is_medical
+              --, f.tracking_level
+              , f.product_group
+              , f.product_name
+              --, f.type_id
+              , cd.visit_number
+              , cd.visit_more_than_once
+              , cd.max_num_visit
+              , f.revenue
+              ,  sum(case when w.wellness_plan is null then 0 else 1 end)
+                over (partition by f.uid)  as wellness_plan
+              --, w.months_a_member
+              , sum(case when cd.visit_number != 1 then f.revenue else 0 end)
+                over (partition by f.uid) as total_future_spend
+              , sum(case when cd.visit_number = 1 then f.revenue else 0 end)
+                over (partition by f.uid) as first_visit_spend
+         from (
+
+                  select t.location_id || '_' || t.animal_id                                                         as uid
+                       , a.breed
+                       , max(
+                          date_diff('years', timestamp 'epoch' + a.date_of_birth * interval '1 second',
+                                    current_date))                                                                   as ani_age
+                       , trunc(t.datetime_date)                                                                      as date
+                       , a.weight
+                       , p.is_medical
+                        , case when  p.product_group like 'Retail%' then 'Retail'
+                                when p.product_group in ('Boarding','Daycare','Daycare Packages') then 'Boarding'
+                                when p.product_group like 'Medication%' then 'Medication'
+                                when p.product_group like  ('Referrals%') then 'Referrals'
+                                when p.product_group in ('to print','To Print','Administration') then 'admin'
+                                else p.product_group end as product_group
+                       --, p.name
+                       --, p.type
+                       --, p.tracking_level
+                       , t.product_name
+                       , sum(t.revenue)                                                                                   as revenue
+                       , dense_rank()
+                         over (partition by t.location_id || '_' || t.animal_id order by trunc(t.datetime_date) asc) as rank_
+                  from bi.transactions t
+                           --inner join bi.products p
+                           left join bi.products p
+                                      on t.product_id = p.ezyvet_id
+                                          and t.location_id = p.location_id
+                           inner join bi.animals a
+                                      on a.id = t.animal_id
+                           left join bi.contacts c
+                                     on a.contact_id = c.ezyvet_id
+                                         and t.location_id = c.location_id
+                        --where t.product_name like 'First Day Daycare Free%'
+                        -- type_id not in ('Cancellation')
+                        -- p.name not like '%Subscri%'
+                        --  and p.product_group != 'Surgical Services'
+                        -- and a.breed != '0.0'
+                  group by 1, 2, 4, 5, 6, 7, 8
+             ) f
+          inner join consecutive_days cd
+                    on f.uid = cd.uid
+                        and f.date = cd.datetime_
+          left join wellness w
+                    on f.uid = w.uid
+                        and f.date = w.datetime_) f1
+left join bi.future_cust_value fcv
+    on f1.uid = fcv.uid
+where f1.visit_number = 1
+    and fcv.uid is null
+order by 1, 4;

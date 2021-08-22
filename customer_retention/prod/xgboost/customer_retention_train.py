@@ -358,7 +358,7 @@ class CustomerRetention():
 
 
 if __name__ == '__main__':
-    mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')
+    mlflow.set_tracking_uri(os.environ.get('MLFLOW_TRACKING_URI'))
     mlflow.set_experiment('Cust 1.5 year value')
     mlflow.xgboost.autolog()
     with mlflow.start_run(run_name=f'XGBoost'):

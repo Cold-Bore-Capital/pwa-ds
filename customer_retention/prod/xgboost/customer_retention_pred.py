@@ -3,6 +3,7 @@ import numpy as np
 
 from cbcdb import DBManager
 import datetime
+from dotenv import find_dotenv, load_dotenv
 import mlflow
 import os
 import xgboost as xgb
@@ -11,6 +12,7 @@ import sys
 sys.path.append('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/customer_retention')
 from utilities.breed_identifier import BreedIdentifier
 
+load_dotenv(find_dotenv())
 
 class CustomerRetentionPred():
     def __init__(self):
@@ -132,10 +134,6 @@ class CustomerRetentionPred():
                                , max(
                                   date_diff('years', timestamp 'epoch' + a.date_of_birth * interval '1 second',
                                             current_date))                                                                   as ani_age
-                               , case when trunc(t.datetime_date) - min(trunc(t.datetime_date)) over (partition by t.location_id || '_' || t.animal_id) > 548 then 0
-                                   else 1 end as less_than_1_5_yeras
-                                , case when current_date - min(trunc(t.datetime_date)) over (partition by t.location_id || '_' || t.animal_id) <  270 then 0
-                                   else 1 end as recent_patient
                                , trunc(t.datetime_date)                                                                      as date
                                , a.weight
                                , p.is_medical
@@ -167,16 +165,14 @@ class CustomerRetentionPred():
                                 -- p.name not like '%Subscri%'
                                 --  and p.product_group != 'Surgical Services'
                                 -- and a.breed != '0.0'
-                          group by 1, 2, 6, 7, 8, 9, 10
+                          group by 1, 2, 4, 5, 6, 7, 8
                      ) f
                   inner join consecutive_days cd
                             on f.uid = cd.uid
                                 and f.date = cd.datetime_
                   left join wellness w
                             on f.uid = w.uid
-                                and f.date = w.datetime_
-                    where less_than_1_5_yeras = 1
-                            and recent_patient = 1) f1
+                                and f.date = w.datetime_) f1
         left join bi.future_cust_value fcv 
             on f1.uid = fcv.uid
         where f1.visit_number = 1
@@ -297,7 +293,7 @@ class CustomerRetentionPred():
 
 
 if __name__ == '__main__':
-    mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')
+    mlflow.set_tracking_uri(os.environ.get('MLFLOW_TRACKING_URI'))
     mlflow.set_experiment('Cust 1.5 year value')
     crp = CustomerRetentionPred()
     crp.start()

@@ -3,6 +3,7 @@ import numpy as np
 
 from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
+import os
 import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
@@ -13,6 +14,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.callbacks import EarlyStopping
 import mlflow
+load_dotenv(find_dotenv())
 
 
 class CustomerRetention():
@@ -147,7 +149,7 @@ class MlflowCallback(tf.keras.callbacks.Callback):
 
 
 if __name__ == '__main__':
-    mlflow.set_tracking_uri('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns')
+    mlflow.set_tracking_uri(os.environ.get('MLFLOW_TRACKING_URI'))
     # mlflow.create_experiment(name='Employee Churn')
     mlflow.set_experiment('Cust 1.5 year value')
 
