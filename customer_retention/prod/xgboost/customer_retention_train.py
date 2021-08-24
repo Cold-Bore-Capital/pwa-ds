@@ -5,22 +5,21 @@ from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
 import matplotlib.pyplot as plt
 import mlflow
-import seaborn as sns
-from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, \
     precision_score, classification_report
-import sys
-sys.path.append('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/customer_retention')
-from utilities.breed_identifier import BreedIdentifier
+
+from customer_retention.util.breed_identifier import BreedIdentifier
+
 import os
 import xgboost as xgb
 
+os.getcwd()
 
 load_dotenv(find_dotenv())
 
 
-class CustomerRetention():
+class CustomerRetentionTrain():
     def __init__(self):
         self.azure_key = os.environ.get('AZURE_KEY')
 
@@ -362,7 +361,7 @@ if __name__ == '__main__':
     mlflow.set_experiment('Cust 1.5 year value')
     mlflow.xgboost.autolog()
     with mlflow.start_run(run_name=f'XGBoost'):
-        cr = CustomerRetention()
+        cr = CustomerRetentionTrain()
         cr.start()
 
 #mlflow server --backend-store-uri postgresql://mlflow_USER:mlflow@0.0.0.0:5438/ML_FLOW_DB  --default-artifact-root /Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns

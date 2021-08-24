@@ -4,7 +4,6 @@ import numpy as np
 from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
 import os
-import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, roc_curve, auc
@@ -17,7 +16,7 @@ import mlflow
 load_dotenv(find_dotenv())
 
 
-class CustomerRetention():
+class CustomerRetentionPred():
     def __init__(self):
         self.db = DBManager()
 
@@ -161,7 +160,7 @@ if __name__ == '__main__':
     # for n, l1, l2 in parameters_list:
     #     # start mlflow run
     with mlflow.start_run(run_name=f'8_02_21'):
-        cr = CustomerRetention(read=True)
+        cr = CustomerRetentionPred(read=True)
         # ep.validate_model_pred()
         cr.read_in_latest()
         X_train, X_test, y_train, y_test, test_unique_ID = cr.feature_eng()

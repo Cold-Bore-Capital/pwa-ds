@@ -3,8 +3,6 @@ import numpy as np
 
 from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
-import seaborn as sns
-from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, \
     precision_score

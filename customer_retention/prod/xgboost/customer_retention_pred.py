@@ -9,8 +9,7 @@ import os
 import xgboost as xgb
 import sys
 
-sys.path.append('/Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/customer_retention')
-from utilities.breed_identifier import BreedIdentifier
+from customer_retention.util.breed_identifier import BreedIdentifier
 
 load_dotenv(find_dotenv())
 
