@@ -1,20 +1,22 @@
 import pandas as pd
 import numpy as np
 
+
 from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
 import matplotlib.pyplot as plt
 import mlflow
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, \
     precision_score, classification_report
-
+import sys
+sys.path.append(os.getcwd())
 from customer_retention.util.breed_identifier import BreedIdentifier
 
 import os
 import xgboost as xgb
 
-os.getcwd()
 
 load_dotenv(find_dotenv())
 
@@ -190,11 +192,7 @@ class CustomerRetentionTrain():
         where f1.visit_number = 1
         order by 1, 4;
         """
-        if export:
-            df = db.get_sql_dataframe(sql)
-            df.to_csv('data/data.csv', index=False)
-        else:
-            df = pd.read_csv('../../customer_retention_prod/data/data.csv')
+        df = db.get_sql_dataframe(sql)
 
         return df
 
@@ -320,8 +318,8 @@ class CustomerRetentionTrain():
     def mlflow_metrics(self, bst, y_test, y_pred):
         ax = xgb.plot_importance(bst)
         ax.figure.tight_layout()
-        ax.figure.savefig('artifacts/feature_importance.png')
-        mlflow.log_artifact("artifacts/feature_importance.png")
+        ax.figure.savefig('customer_retention/prod/artifacts/feature_importance.png')
+        mlflow.log_artifact("customer_retention/prod/artifacts/feature_importance.png")
         plt.close()
 
         mlflow.xgboost.log_model(bst,
@@ -357,11 +355,11 @@ class CustomerRetentionTrain():
 
 
 if __name__ == '__main__':
-    mlflow.set_tracking_uri(os.environ.get('MLFLOW_TRACKING_URI'))
-    mlflow.set_experiment('Cust 1.5 year value')
+    mlflow.set_tracking_uri(os.environ.get('MLFLOW__CORE__SQL_ALCHEMY_CONN'))
+    #mlflow.create_experiment('Future Cust Value', os.environ.get('EXAVAULT'))
+    mlflow.create_experiment('Test6', 's3://visit_1')
+    mlflow.set_experiment('Test6')
     mlflow.xgboost.autolog()
     with mlflow.start_run(run_name=f'XGBoost'):
         cr = CustomerRetentionTrain()
         cr.start()
-
-#mlflow server --backend-store-uri postgresql://mlflow_USER:mlflow@0.0.0.0:5438/ML_FLOW_DB  --default-artifact-root /Users/adhamsuliman/Documents/cbc/pwa/pwa-ds/mlruns

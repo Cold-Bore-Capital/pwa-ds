@@ -35,6 +35,8 @@ create temporary table consecutive_days as (
                       having revenue_ > 0
                             order by 1, 2))));
 
+select * from consecutive_days;
+
 select * from consecutive_days
 where uid = '2_884';
 
@@ -237,7 +239,8 @@ create temporary table wellness as (
                        on a.location_id = wm.location_id
                            and a.ezyvet_id = wm.animal_id);
 
-
+drop  table new_;
+create temporary table new_ as (
             select f1.uid
              , f1.breed
              , f1.ani_age
@@ -330,12 +333,11 @@ create temporary table wellness as (
                                 and f.date = w.datetime_
                     where less_than_1_5_yeras = 1
                             and recent_patient = 1) f1
-        left join bi.future_cust_value fcv
-            on f1.uid = fcv.uid
         where f1.visit_number = 1
-            and fcv.uid is null
-        order by 1, 4;
+        order by 1, 4);
 
+
+select sum(total_future_spend) from new_;
 
 -- For predict
 

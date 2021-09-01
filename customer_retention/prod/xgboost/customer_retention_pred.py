@@ -8,7 +8,7 @@ import mlflow
 import os
 import xgboost as xgb
 import sys
-
+sys.path.append('/')
 from customer_retention.util.breed_identifier import BreedIdentifier
 
 load_dotenv(find_dotenv())
@@ -251,7 +251,7 @@ class CustomerRetentionPred():
         return X
 
     @staticmethod
-    def pull_best_model_and_predict(X: pd.DataFrame):
+    def pull_best_model_and_predict(X: pd.DataFrame, visit_number: int):
         # pull the best, most recent model
         models = mlflow.search_runs(order_by=["metrics.Precision_Binary DESC", "attribute.start_time DESC"])
         run_id = models.iloc[0]['run_id']
@@ -270,9 +270,10 @@ class CustomerRetentionPred():
         df['uid'] = X['uid']
         df['final_category'] = y
         df['final_category_prob'] = y_final_prob
+        df['date_of_upload'] = datetime.date.today().strftime('%Y-%m-%d')
         df['total_num_visit'] = 1
         df['total_future_spend'] = 0
-        df['date_of_upload'] = datetime.date.today().strftime('%Y-%m-%d')
+
 
         return df
 
@@ -292,7 +293,5 @@ class CustomerRetentionPred():
 
 
 if __name__ == '__main__':
-    mlflow.set_tracking_uri(os.environ.get('MLFLOW_TRACKING_URI'))
-    mlflow.set_experiment('Cust 1.5 year value')
     crp = CustomerRetentionPred()
     crp.start()
