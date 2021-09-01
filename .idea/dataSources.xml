@@ -8,5 +8,19 @@
       <jdbc-url>jdbc:redshift://pwa.czsn4sr4vgrv.us-east-2.redshift.amazonaws.com:5439/dev</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="pwa vpn" uuid="95ac05e6-189c-4632-aba4-dcf1ac77bf5b">
+      <driver-ref>redshift</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>com.amazon.redshift.jdbc.Driver</jdbc-driver>
+      <jdbc-url>jdbc:redshift://pwa.czsn4sr4vgrv.us-east-2.redshift.amazonaws.com:5439/dev</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+    <data-source source="LOCAL" name="airflow" uuid="bdac5214-72ce-44e6-a5d1-fd7cdc8012c4">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://localhost:5432/mlflow</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>

@@ -1,2 +1,0 @@
-mlflow
-xgboost==1.4.0
