@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 from cbcdb import DBManager
-import datetime
+from datetime import date
 from dotenv import find_dotenv, load_dotenv
 import mlflow
 import os
