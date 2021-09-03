@@ -16,7 +16,7 @@ import xgboost as xgb
 
 load_dotenv(find_dotenv())
 
-class CustomerRetentionTrain():
+class CustomerRetentionPredict():
     def __init__(self):
         self.azure_key = os.environ.get('AZURE_KEY')
 
@@ -323,5 +323,5 @@ if __name__ == '__main__':
     visits_name = ['visit_' + str(x) for x in visits_number]
     for v_num, v_name in zip(visits_number, visits_name):
         mlflow.set_experiment(v_name)
-        cr = CustomerRetentionTrain()
+        cr = CustomerRetentionPredict()
         cr.start(visit_number=v_num)

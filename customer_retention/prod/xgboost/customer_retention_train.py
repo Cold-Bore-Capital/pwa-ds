@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 
-
 from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
 import matplotlib.pyplot as plt
@@ -11,12 +10,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, \
     precision_score, classification_report
 import sys
+
 sys.path.append(os.getcwd())
 from customer_retention.util.breed_identifier import BreedIdentifier
 
 import os
 import xgboost as xgb
-
 
 load_dotenv(find_dotenv())
 
@@ -26,11 +25,12 @@ class CustomerRetentionTrain():
         self.azure_key = os.environ.get('AZURE_KEY')
 
     def start(self,
+              visit_number,
               objective='multi:softprob'):
 
         db = DBManager()
         # Read in the latest data
-        df = self.read_in_latest(db)
+        df = self.read_in_latest(db, visit_number)
 
         # Return dog Breed
         df = self.dog_breed(df, db)
@@ -50,8 +50,8 @@ class CustomerRetentionTrain():
         # Store metrics on mlflow
         self.mlflow_metrics(model, y_test, y_pred)
 
-    def read_in_latest(self, db: DBManager, export: bool = True):
-        sql = """    
+    def read_in_latest(self, db: DBManager, visit_number: int):
+        sql = f"""    
         create temporary table consecutive_days as (
             select uid
                  , datetime_
@@ -80,7 +80,7 @@ class CustomerRetentionTrain():
                                     group by 1,2
                               having revenue_ > 0
                                     order by 1, 2))));
-        
+
         create temporary table wellness as (
             select wm.location_id || '_' || wm.animal_id                 as uid
                  , date(datetime_start_date)                             as datetime_
@@ -96,7 +96,7 @@ class CustomerRetentionTrain():
                                    and a.ezyvet_id = wm.animal_id);
         -- where wp.active = 1
         --  and wm.status = 'Active');
-        
+
             select f1.uid
              , f1.breed
              , f1.ani_age
@@ -113,8 +113,9 @@ class CustomerRetentionTrain():
              , f1.visit_number
              , f1.visit_more_than_once
              , f1.max_num_visit
-             , f1.first_visit_spend
+             , f1.most_recent_visit_spend
              , f1.total_future_spend
+             , f1.total_past_spend
         from (
                      select f.uid
                       , f.breed
@@ -133,10 +134,12 @@ class CustomerRetentionTrain():
                       ,  sum(case when w.wellness_plan is null then 0 else 1 end)
                         over (partition by f.uid)  as wellness_plan
                       --, w.months_a_member
-                      , sum(case when cd.visit_number != 1 then f.revenue else 0 end)
+                      , sum(case when cd.visit_number > {visit_number} then f.revenue else 0 end)
                         over (partition by f.uid) as total_future_spend
-                      , sum(case when cd.visit_number = 1 then f.revenue else 0 end)
-                        over (partition by f.uid) as first_visit_spend
+                      , sum(case when cd.visit_number = {visit_number} then f.revenue else 0 end)
+                        over (partition by f.uid) as most_recent_visit_spend
+                        , sum(case when cd.visit_number < {visit_number} then f.revenue else 0 end)
+                        over (partition by f.uid) as total_past_spend
                  from (
 
                           select t.location_id || '_' || t.animal_id                                                         as uid
@@ -189,7 +192,7 @@ class CustomerRetentionTrain():
                                 and f.date = w.datetime_
                     where less_than_1_5_yeras = 1
                             and recent_patient = 1) f1
-        where f1.visit_number = 1
+        where f1.visit_number = {visit_number}
         order by 1, 4;
         """
         df = db.get_sql_dataframe(sql)
@@ -221,41 +224,44 @@ class CustomerRetentionTrain():
         print(
             f"There are {df[df.total_future_spend < 0]['uid'].nunique()} patients who have somehow spent less than $0")
         df.reset_index(drop=True, inplace=True)
-        df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_group', 'tier', 'is_medical',
-                  'wellness_plan', 'first_visit_spend', 'total_future_spend']]
+        df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_size', 'tier', 'is_medical', 'product_group',
+                  'wellness_plan', 'most_recent_visit_spend', 'total_future_spend', 'total_past_spend']]
 
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         # # Create categorical df. Number of rows should equate to the number of unique uid
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-        cat_features = ['wellness_plan', 'breed_group', 'tier']
+        cat_features = ['wellness_plan', 'breed_size', 'tier']  # , 'product_group']
         df_cat = df_[['uid'] + cat_features].drop_duplicates()
+        # Come back to use this when we have more data
         # df_product_group = pd.get_dummies(df_.product_group)
-        df_breed_group = pd.get_dummies(df_cat.breed_group)
+        df_breed_size = pd.get_dummies(df_cat.breed_size)
         df_tier = pd.get_dummies(df_cat.tier)
+        df_tier.rename(columns={'None': 'tier_other'}, inplace=True)
 
         df_cat = pd.concat([df_cat[['uid']],
-                            # df_cat.product_group,
-                            df_breed_group,
+                            # df_product_group,
+                            df_breed_size,
                             df_tier], axis=1)  #
         df_categories = df_cat.groupby(['uid'], as_index=False).max()
 
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         # Create standardized df. Number of rows should equate to the number of unique uid
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        cont_features = ['ani_age', 'weight', 'breed_group', 'is_medical', 'wellness_plan', 'first_visit_spend',
-                         'total_future_spend']
+        cont_features = ['ani_age', 'weight', 'breed_size', 'is_medical', 'wellness_plan', 'most_recent_visit_spend',
+                         'total_future_spend', 'total_past_spend']
         df_cont = df_[['uid'] + cont_features].drop_duplicates()
 
         # look into a binary indicator for weight
         df_cont['ani_age'] = df_cont['ani_age'].fillna((df_cont['ani_age'].mean()))
         df_cont['weight'] = df_cont['weight'].replace(0, np.nan)
-        df_cont['weight'] = df_cont.groupby(['ani_age', 'breed_group'])['weight'].transform(
+        df_cont['weight'] = df_cont.groupby(['ani_age', 'breed_size'])['weight'].transform(
             lambda x: x.fillna(x.mean()))
-        df_cont['weight'] = df_cont.groupby(['breed_group'])['weight'].transform(lambda x: x.fillna(x.mean()))
+        df_cont['weight'] = df_cont.groupby(['breed_size'])['weight'].transform(lambda x: x.fillna(x.mean()))
 
-        df_cont = df_cont.groupby(['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend'],
-                                  as_index=False).agg(
+        df_cont = df_cont.groupby(
+            ['uid', 'ani_age', 'weight', 'most_recent_visit_spend', 'total_future_spend', 'total_past_spend'],
+            as_index=False).agg(
             is_medical_max=('is_medical', 'max'),
             is_medical_count=('is_medical', 'count'),
             wellness_plan_max=('wellness_plan', 'max'),
@@ -277,13 +283,12 @@ class CustomerRetentionTrain():
             bins = [0, 1, 99999]
             labels = [0, 1]
             df['total_future_spend_bin'] = pd.cut(df['total_future_spend'], bins=bins, include_lowest=True,
-                                                        labels=labels)
+                                                  labels=labels)
         else:
             bins = [0, 1, 200, 350, 500, 1000, 99999]
             labels = [0, 1, 2, 3, 4, 5]
             df['total_future_spend_bin'] = pd.cut(df['total_future_spend'], bins=bins, include_lowest=True,
-                                                        labels=labels)
-
+                                                  labels=labels)
 
     @staticmethod
     def split_train_test(df, label: str = 'total_future_spend_bin'):
@@ -307,7 +312,7 @@ class CustomerRetentionTrain():
                  'objective': objective,
                  'num_class': 6,
                  'nthread': 4,
-                 'eval_metric': ['merror','mlogloss','auc']}
+                 'eval_metric': ['merror', 'mlogloss', 'auc']}
 
         num_round = 20
         bst = xgb.train(param, dtrain, num_round, evallist)
@@ -318,13 +323,13 @@ class CustomerRetentionTrain():
     def mlflow_metrics(self, bst, y_test, y_pred):
         ax = xgb.plot_importance(bst)
         ax.figure.tight_layout()
-        ax.figure.savefig('customer_retention/prod/artifacts/feature_importance.png')
-        mlflow.log_artifact("customer_retention/prod/artifacts/feature_importance.png")
+        ax.figure.savefig('customer_retention/dev/xgboost/artifacts/feature_importance.png')
+        mlflow.log_artifact("customer_retention/dev/xgboost/artifacts/feature_importance.png")
         plt.close()
 
-        mlflow.xgboost.log_model(bst,
-                                "xgboost",
-                                 conda_env=mlflow.xgboost.get_default_conda_env())
+        # mlflow.xgboost.log_model(bst,
+        #                          "xgboost",
+        #                          conda_env=mlflow.xgboost.get_default_conda_env())
 
         # store metrics
         f1_score_0 = f1_score(y_test, y_pred, labels=[0, 1, 2, 3, 4, 5], average="weighted")
@@ -356,10 +361,16 @@ class CustomerRetentionTrain():
 
 if __name__ == '__main__':
     mlflow.set_tracking_uri(os.environ.get('MLFLOW__CORE__SQL_ALCHEMY_CONN'))
-    #mlflow.create_experiment('Future Cust Value', os.environ.get('EXAVAULT'))
-    mlflow.create_experiment('Test6', 's3://visit_1')
-    mlflow.set_experiment('Test6')
-    mlflow.xgboost.autolog()
-    with mlflow.start_run(run_name=f'XGBoost'):
-        cr = CustomerRetentionTrain()
-        cr.start()
+    s3 = os.environ['MLFLOW_S3_ENDPOINT']
+    visits_number = [1, 2, 3, 4, 5]
+    visits_name = ['visit_' + str(x) for x in visits_number]
+    for v_num, v_name in zip(visits_number, visits_name):
+        try:
+            mlflow.create_experiment(f'{v_name}', f'{s3}/{v_name}')
+        except:
+            pass
+        mlflow.set_experiment(f'{v_name}')
+        mlflow.xgboost.autolog()
+        with mlflow.start_run(run_name=f'XGBoost'):
+            cr = CustomerRetentionTrain()
+            cr.start(visit_number=v_num)

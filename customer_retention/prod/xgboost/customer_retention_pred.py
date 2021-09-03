@@ -13,16 +13,21 @@ from customer_retention.util.breed_identifier import BreedIdentifier
 
 load_dotenv(find_dotenv())
 
+
 class CustomerRetentionPred():
     def __init__(self):
-        self.db = DBManager()
         self.azure_key = os.environ.get('AZURE_KEY')
 
-    def start(self, objective='multi:softprob'):
-        db = DBManager()
+    def start(self,
+              visit_number,
+              objective='multi:softprob'):
 
+        db = DBManager()
         # Read in the latest data
-        df = self.read_in_latest(db)
+        df = self.read_in_latest(db, visit_number)
+
+        if isinstance(df, str):
+            return print(df)
 
         # Return dog Breed
         df = self.dog_breed(df, db)
@@ -30,17 +35,14 @@ class CustomerRetentionPred():
         # Begin feature engineering
         df = self.feature_eng(df, objective)
 
-        # Split into train and test
-        X = self.return_X(df)
-
         # Pull Best model
-        df = self.pull_best_model_and_predict(X)
+        df = self.pull_best_model_and_predict(df, visit_number)
 
         # Write to db
         self.write_to_db(df, db)
 
-    def read_in_latest(self, db: DBManager):
-        sql = """    
+    def read_in_latest(self, db: DBManager, visit_number: int):
+        sql = f"""    
         create temporary table consecutive_days as (
             select uid
                  , datetime_
@@ -69,7 +71,7 @@ class CustomerRetentionPred():
                                     group by 1,2
                               having revenue_ > 0
                                     order by 1, 2))));
-        
+
         create temporary table wellness as (
             select wm.location_id || '_' || wm.animal_id                 as uid
                  , date(datetime_start_date)                             as datetime_
@@ -85,7 +87,7 @@ class CustomerRetentionPred():
                                    and a.ezyvet_id = wm.animal_id);
         -- where wp.active = 1
         --  and wm.status = 'Active');
-        
+
             select f1.uid
              , f1.breed
              , f1.ani_age
@@ -102,8 +104,9 @@ class CustomerRetentionPred():
              , f1.visit_number
              , f1.visit_more_than_once
              , f1.max_num_visit
-             , f1.first_visit_spend
              , f1.total_future_spend
+             , f1.most_recent_visit_spend
+             , f1.total_past_spend
         from (
                      select f.uid
                       , f.breed
@@ -122,10 +125,12 @@ class CustomerRetentionPred():
                       ,  sum(case when w.wellness_plan is null then 0 else 1 end)
                         over (partition by f.uid)  as wellness_plan
                       --, w.months_a_member
-                      , sum(case when cd.visit_number != 1 then f.revenue else 0 end)
+                       , sum(case when cd.visit_number > {visit_number} then f.revenue else 0 end)
                         over (partition by f.uid) as total_future_spend
-                      , sum(case when cd.visit_number = 1 then f.revenue else 0 end)
-                        over (partition by f.uid) as first_visit_spend
+                      , sum(case when cd.visit_number = {visit_number} then f.revenue else 0 end)
+                        over (partition by f.uid) as most_recent_visit_spend
+                        , sum(case when cd.visit_number < {visit_number} then f.revenue else 0 end)
+                        over (partition by f.uid) as total_past_spend
                  from (
 
                           select t.location_id || '_' || t.animal_id                                                         as uid
@@ -174,50 +179,70 @@ class CustomerRetentionPred():
                                 and f.date = w.datetime_) f1
         left join bi.future_cust_value fcv 
             on f1.uid = fcv.uid
-        where f1.visit_number = 1
+            and fcv.predict_for_visit_number = {visit_number}
+        where f1.visit_number = {visit_number}
             and fcv.uid is null  
         order by 1, 4;
         """
         df = db.get_sql_dataframe(sql)
+        if len(df) == 0:
+            return f"No new patients to be processed with visit number {visit_number}"
         return df
+
+    def dog_breed(self, df, db):
+        df_breed = db.get_sql_dataframe("select * from bi.breeds")
+        breed = set(df.breed.unique().tolist())
+        breed_orig = set(df_breed.breed.unique().tolist())
+
+        new_breeds = list(breed - breed_orig)
+        if ((len(new_breeds) > 0) and (new_breeds[0] is not None)):
+            bi = BreedIdentifier()
+            bi.start(new_breeds)
+            return self.dog_breed(df, db)
+        else:
+            df1 = df.merge(df_breed, on='breed')
+            return df1
 
     @staticmethod
     def feature_eng(df: pd.DataFrame, objective: str) -> pd.DataFrame:
         df.reset_index(drop=True, inplace=True)
-        df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_group', 'tier', 'is_medical',
-                  'wellness_plan', 'first_visit_spend', 'total_future_spend']]
+        df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_size', 'tier', 'is_medical',
+                   'wellness_plan', 'total_future_spend','most_recent_visit_spend', 'total_past_spend','max_num_visit']]
 
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         # # Create categorical df. Number of rows should equate to the number of unique uid
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-        cat_features = ['wellness_plan', 'breed_group', 'tier']
+        cat_features = ['wellness_plan', 'breed_size', 'tier']#, 'product_group']
         df_cat = df_[['uid'] + cat_features].drop_duplicates()
-        # df_product_group = pd.get_dummies(df_.product_group)
-        df_breed_group = pd.get_dummies(df_cat.breed_group)
+        # Come back to use this when we have more data
+        #df_product_group = pd.get_dummies(df_.product_group)
+        df_breed_size = pd.get_dummies(df_cat.breed_size)
         df_tier = pd.get_dummies(df_cat.tier)
+        df_tier.rename(columns={'None': 'tier_other'}, inplace=True)
 
         df_cat = pd.concat([df_cat[['uid']],
                             # df_cat.product_group,
-                            df_breed_group,
+                            df_breed_size,
                             df_tier], axis=1)  #
         df_categories = df_cat.groupby(['uid'], as_index=False).max()
 
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         # Create standardized df. Number of rows should equate to the number of unique uid
         # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-        cont_features = ['ani_age', 'weight', 'breed_group', 'is_medical', 'wellness_plan', 'first_visit_spend',
-                         'total_future_spend']
+        cont_features = ['ani_age', 'weight', 'breed_size', 'is_medical', 'wellness_plan','most_recent_visit_spend',
+                         'total_future_spend', 'total_past_spend', 'max_num_visit']
         df_cont = df_[['uid'] + cont_features].drop_duplicates()
 
         # look into a binary indicator for weight
         df_cont['ani_age'] = df_cont['ani_age'].fillna((df_cont['ani_age'].mean()))
         df_cont['weight'] = df_cont['weight'].replace(0, np.nan)
-        df_cont['weight'] = df_cont.groupby(['ani_age', 'breed_group'])['weight'].transform(
+        df_cont['weight'] = df_cont.groupby(['ani_age', 'breed_size'])['weight'].transform(
             lambda x: x.fillna(x.mean()))
-        df_cont['weight'] = df_cont.groupby(['breed_group'])['weight'].transform(lambda x: x.fillna(x.mean()))
+        df_cont['weight'] = df_cont.groupby(['breed_size'])['weight'].transform(lambda x: x.fillna(x.mean()))
 
-        df_cont = df_cont.groupby(['uid', 'ani_age', 'weight', 'first_visit_spend', 'total_future_spend'],
+        df_cont = df_cont.groupby(['uid', 'ani_age', 'weight', 'total_future_spend',
+                                   'most_recent_visit_spend', 'total_past_spend','max_num_visit'],
                                   as_index=False).agg(
             is_medical_max=('is_medical', 'max'),
             is_medical_count=('is_medical', 'count'),
@@ -243,22 +268,18 @@ class CustomerRetentionPred():
             return df1
 
     @staticmethod
-    def return_X(df):
-        final_columns = list(df.columns)
-        for i in ['total_future_spend']:
-            final_columns.remove(i)
-        X = df[final_columns]
-        return X
-
-    @staticmethod
-    def pull_best_model_and_predict(X: pd.DataFrame, visit_number: int):
+    def pull_best_model_and_predict(df_orig: pd.DataFrame,  visit_number: int):
         # pull the best, most recent model
         models = mlflow.search_runs(order_by=["metrics.Precision_Binary DESC", "attribute.start_time DESC"])
         run_id = models.iloc[0]['run_id']
-        model = mlflow.xgboost.load_model("runs:/" + run_id + "/model")
+        model = mlflow.xgboost.load_model(models.loc[0]['artifact_uri']+'/model')
+        final_columns = list(df_orig.columns)
+        for i in ['uid','total_future_spend','max_num_visit']:
+            final_columns.remove(i)
+        X = df_orig[final_columns].copy()
 
         # Predict on current test data
-        test = xgb.DMatrix(X.drop(columns='uid'), missing=-999.0)
+        test = xgb.DMatrix(X, missing=-999.0)
         y_pred = model.predict(test)
 
         # Format data to be put into db
@@ -267,13 +288,15 @@ class CustomerRetentionPred():
         y = np.argmax(y_pred, axis=-1)
         df = pd.DataFrame(y_pred, columns=['predicted_val_prob_0', 'predicted_val_prob_1', 'predicted_val_prob_2',
                                            'predicted_val_prob_3', 'predicted_val_prob_4', 'predicted_val_prob_5'])
-        df['uid'] = X['uid']
+        df['uid'] = df_orig['uid']
         df['final_category'] = y
         df['final_category_prob'] = y_final_prob
-        df['date_of_upload'] = datetime.date.today().strftime('%Y-%m-%d')
-        df['total_num_visit'] = 1
-        df['total_future_spend'] = 0
-
+        df['total_num_visit'] = df_orig['max_num_visit']
+        df['predict_for_visit_number'] = visit_number
+        df['total_past_spend'] = df_orig['total_past_spend']
+        df['total_future_spend'] = df_orig['total_future_spend']
+        df['date_of_upload'] = date.today().strftime('%Y-%m-%d')
+        df['most_recent_visit_spend'] = df_orig.most_recent_visit_spend
 
         return df
 
@@ -293,5 +316,10 @@ class CustomerRetentionPred():
 
 
 if __name__ == '__main__':
-    crp = CustomerRetentionPred()
-    crp.start()
+    mlflow.set_tracking_uri(os.environ.get('MLFLOW__CORE__SQL_ALCHEMY_CONN'))
+    visits_number = [1, 2, 3, 4, 5]
+    visits_name = ['visit_' + str(x) for x in visits_number]
+    for v_num, v_name in zip(visits_number, visits_name):
+        mlflow.set_experiment(v_name)
+        cr = CustomerRetentionPred()
+        cr.start(visit_number=v_num)

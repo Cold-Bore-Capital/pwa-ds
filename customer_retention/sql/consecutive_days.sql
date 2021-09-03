@@ -35,13 +35,6 @@ create temporary table consecutive_days as (
                       having revenue_ > 0
                             order by 1, 2))));
 
-select * from consecutive_days
-where uid ='2_1077';
-
-
-select * from consecutive_days
-where uid = '2_884';
-
 select
 uid
 , datetime_
