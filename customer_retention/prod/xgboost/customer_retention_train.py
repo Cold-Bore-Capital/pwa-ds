@@ -5,6 +5,7 @@ from cbcdb import DBManager
 from dotenv import load_dotenv, find_dotenv
 import matplotlib.pyplot as plt
 import mlflow
+import mlflow.xgboost
 import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score, f1_score, recall_score, \
@@ -323,8 +324,8 @@ class CustomerRetentionTrain():
     def mlflow_metrics(self, bst, y_test, y_pred):
         ax = xgb.plot_importance(bst)
         ax.figure.tight_layout()
-        ax.figure.savefig('customer_retention/dev/xgboost/artifacts/feature_importance.png')
-        mlflow.log_artifact("customer_retention/dev/xgboost/artifacts/feature_importance.png")
+        ax.figure.savefig('customer_retention/artifacts/feature_importance.png')
+        mlflow.log_artifact("customer_retention/artifacts/feature_importance.png")
         plt.close()
 
         # mlflow.xgboost.log_model(bst,

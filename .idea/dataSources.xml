@@ -15,11 +15,18 @@
       <jdbc-url>jdbc:redshift://pwa.czsn4sr4vgrv.us-east-2.redshift.amazonaws.com:5439/dev</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
-    <data-source source="LOCAL" name="airflow" uuid="bdac5214-72ce-44e6-a5d1-fd7cdc8012c4">
+    <data-source source="LOCAL" name="airflow-pwa-etl" uuid="bdac5214-72ce-44e6-a5d1-fd7cdc8012c4">
       <driver-ref>postgresql</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.postgresql.Driver</jdbc-driver>
-      <jdbc-url>jdbc:postgresql://localhost:5432/mlflow</jdbc-url>
+      <jdbc-url>jdbc:postgresql://pwa-etl:5432/mlflow</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+    <data-source source="LOCAL" name="postgres@localhost" uuid="e956e30e-9759-4b3c-b4ce-6bc51bdf98ed">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://localhost:5432/postgres</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>

@@ -7,8 +7,9 @@ from dotenv import find_dotenv, load_dotenv
 import mlflow
 import os
 import xgboost as xgb
+import mlflow.xgboost
 import sys
-sys.path.append('/')
+sys.path.append(os.getcwd())
 from customer_retention.util.breed_identifier import BreedIdentifier
 
 load_dotenv(find_dotenv())
@@ -28,6 +29,9 @@ class CustomerRetentionPred():
 
         if isinstance(df, str):
             return print(df)
+
+        # Find mean weight of animals to inject if weight is NA
+        df = self.fill_in_weight(df, db)
 
         # Return dog Breed
         df = self.dog_breed(df, db)
@@ -189,6 +193,40 @@ class CustomerRetentionPred():
             return f"No new patients to be processed with visit number {visit_number}"
         return df
 
+    @staticmethod
+    def fill_in_weight(df: pd.DataFrame, db: DBManager) -> pd.DataFrame:
+        sql = """select x.breed
+                         , x.baby
+                         , avg(weight) as weight
+                    from (
+                             select breed
+                                  , date((convert_timezone('utc', 'america/chicago',
+                                                           timestamp 'epoch' +
+                                                           (a.date_of_birth) * interval '1 second'))) as dob
+                                  , datediff(year, dob, current_date)                                    animal_age
+                                  , case
+                                        when animal_age <= 1 then 'baby'
+                                        else 'adult'
+                                 end                                                                  as baby
+                                  , weight
+                             from bi.animals a
+                                      join bi.transactions t
+                                           on a.id = t.animal_id) x
+                    group by 1, 2;"""
+        df_weight = db.get_sql_dataframe(sql)
+
+        df['weight'] = df['weight'].fillna(0)
+        df_w_weight = df[df.weight > 0]
+        df_wo_weight = df[df.weight == 0]
+        df_wo_weight.drop(columns='weight',inplace=True)
+        df_wo_weight['baby'] = df_wo_weight['ani_age'].apply(lambda x: 'baby' if x < 1 else 'adult')
+
+        df_wo_weight = df_wo_weight.merge(df_weight, on=['breed','baby'])
+        df_wo_weight.drop(columns=['baby'], inplace=True)
+
+        df_ = pd.concat([df_w_weight, df_wo_weight], ignore_index=True)
+        return df_
+
     def dog_breed(self, df, db):
         df_breed = db.get_sql_dataframe("select * from bi.breeds")
         breed = set(df.breed.unique().tolist())
@@ -204,7 +242,7 @@ class CustomerRetentionPred():
             return df1
 
     @staticmethod
-    def feature_eng(df: pd.DataFrame, objective: str) -> pd.DataFrame:
+    def feature_eng(df: pd.DataFrame, df_weight: pd.DataFrame) -> pd.DataFrame:
         df.reset_index(drop=True, inplace=True)
         df_ = df[['uid', 'ani_age', 'weight', 'product_group', 'breed_size', 'tier', 'is_medical',
                    'wellness_plan', 'total_future_spend','most_recent_visit_spend', 'total_past_spend','max_num_visit']]
@@ -236,10 +274,10 @@ class CustomerRetentionPred():
 
         # look into a binary indicator for weight
         df_cont['ani_age'] = df_cont['ani_age'].fillna((df_cont['ani_age'].mean()))
-        df_cont['weight'] = df_cont['weight'].replace(0, np.nan)
+
         df_cont['weight'] = df_cont.groupby(['ani_age', 'breed_size'])['weight'].transform(
             lambda x: x.fillna(x.mean()))
-        df_cont['weight'] = df_cont.groupby(['breed_size'])['weight'].transform(lambda x: x.fillna(x.mean()))
+
 
         df_cont = df_cont.groupby(['uid', 'ani_age', 'weight', 'total_future_spend',
                                    'most_recent_visit_spend', 'total_past_spend','max_num_visit'],
@@ -269,10 +307,11 @@ class CustomerRetentionPred():
 
     @staticmethod
     def pull_best_model_and_predict(df_orig: pd.DataFrame,  visit_number: int):
+        mlflow.get_experiment_by_name('visit_' + str(visits_number))
         # pull the best, most recent model
         models = mlflow.search_runs(order_by=["metrics.Precision_Binary DESC", "attribute.start_time DESC"])
-        run_id = models.iloc[0]['run_id']
         model = mlflow.xgboost.load_model(models.loc[0]['artifact_uri']+'/model')
+        mlflow.xgboost.load_model(models.loc[0]['artifact_uri']+'/model')
         final_columns = list(df_orig.columns)
         for i in ['uid','total_future_spend','max_num_visit']:
             final_columns.remove(i)
