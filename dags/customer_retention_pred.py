@@ -66,8 +66,8 @@ default_args = {
 
 dag = DAG(
     "Model_Predict",
-    description="Predict every hour",
-    schedule_interval='0 * * * *',
+    description="Predict once a day at 0 UTC",
+    schedule_interval='0 0 * * *',
     default_args=default_args,
     catchup=False,
 )
