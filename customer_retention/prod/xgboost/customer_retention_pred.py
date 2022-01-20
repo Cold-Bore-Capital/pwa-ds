@@ -188,6 +188,7 @@ class CustomerRetentionPred():
             and fcv.uid is null  
         order by 1, 4;
         """
+        print(f"ssh_key_path: {db.ssh_key_path}")
         df = db.get_sql_dataframe(sql)
         if len(df) == 0:
             return f"No new patients to be processed with visit number {visit_number}"
