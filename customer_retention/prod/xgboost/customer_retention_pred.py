@@ -216,10 +216,12 @@ class CustomerRetentionPred():
                     group by 1, 2;"""
         df_weight = db.get_sql_dataframe(sql)
 
-        df['weight'] = df['weight'].fillna(0)
+        df['weight'] = df['weight'].apply(lambda x: -999 if x <= 0 else x)
         df_w_weight = df[df.weight > 0]
-        df_wo_weight = df[df.weight == 0]
+        df_wo_weight = df[df.weight == -999]
         df_wo_weight.drop(columns='weight',inplace=True)
+
+        df_wo_weight['ani_age'] = df_wo_weight['ani_age'].fillna(10)
         df_wo_weight['baby'] = df_wo_weight['ani_age'].apply(lambda x: 'baby' if x < 1 else 'adult')
 
         df_wo_weight = df_wo_weight.merge(df_weight, on=['breed','baby'])
@@ -318,6 +320,8 @@ class CustomerRetentionPred():
             final_columns.remove(i)
         X = df_orig[final_columns].copy()
 
+        if len(X) < 1:
+            return "No Records Left"
         # Predict on current test data
         test = xgb.DMatrix(X, missing=-999.0, enable_categorical=True)
         y_pred = model.predict(test)
