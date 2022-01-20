@@ -319,7 +319,7 @@ class CustomerRetentionPred():
         X = df_orig[final_columns].copy()
 
         # Predict on current test data
-        test = xgb.DMatrix(X, missing=-999.0)
+        test = xgb.DMatrix(X, missing=-999.0, enable_categorical=True)
         y_pred = model.predict(test)
 
         # Format data to be put into db
