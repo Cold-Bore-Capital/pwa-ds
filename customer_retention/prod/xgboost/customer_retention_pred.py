@@ -308,7 +308,7 @@ class CustomerRetentionPred():
 
     @staticmethod
     def pull_best_model_and_predict(df_orig: pd.DataFrame,  visit_number: int):
-        mlflow.get_experiment_by_name('visit_' + str(visits_number))
+        mlflow.get_experiment_by_name('visit_' + str(visit_number))
         # pull the best, most recent model
         models = mlflow.search_runs(order_by=["metrics.Precision_Binary DESC", "attribute.start_time DESC"])
         model = mlflow.xgboost.load_model(models.loc[0]['artifact_uri']+'/model')
