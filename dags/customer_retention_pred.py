@@ -59,7 +59,7 @@ default_args = {
     'email': 'asuliman@coldborecapital.com',
     'email_on_failure': True,
     'email_on_retry': False,
-    'retries': 1,
+    #'retries': 1,
     'on_success_callback': success_email_operator,
     'on_failure_callback': failed_email_operator
 }
